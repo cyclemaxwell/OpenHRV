@@ -32,6 +32,10 @@ from openhrv.config import (
 )
 from openhrv import resources  # noqa
 
+OCTOBER_SILENCE_BLUE = QColor.fromString("#b721ff")
+OCTOBER_SILENCE_PURPLE = QColor.fromString("#21d4fd")
+
+
 BLUE = QColor(135, 206, 250)
 WHITE = QColor(255, 255, 255)
 GREEN = QColor(0, 255, 0)
@@ -203,9 +207,9 @@ class View(QMainWindow):
         self.hrv_widget.y_axis.setRange(0, self.model.hrv_target)
         colorgrad = QLinearGradient(0, 0, 0, 1)  # horizontal gradient
         colorgrad.setCoordinateMode(QGradient.ObjectMode)
-        colorgrad.setColorAt(0, GREEN)
-        colorgrad.setColorAt(0.6, YELLOW)
-        colorgrad.setColorAt(1, RED)
+        colorgrad.setColorAt(0, OCTOBER_SILENCE_BLUE)
+        # colorgrad.setColorAt(0.6, WHITE)
+        colorgrad.setColorAt(1, OCTOBER_SILENCE_PURPLE)
         brush = QBrush(colorgrad)
         self.hrv_widget.plot.setPlotAreaBackgroundBrush(brush)
         self.hrv_widget.plot.setPlotAreaBackgroundVisible(True)
