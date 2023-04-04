@@ -5,6 +5,9 @@ HRV_MEAN_WINDOW = 15  # seconds
 
 MIN_BREATHING_RATE = 4  # breaths per minute
 MAX_BREATHING_RATE = 7  # breaths per minute
+INITIAL_BREATHING_RATE = 6  # breaths per minute
+
+DEFAULT_BPM = True  # show heart rate in bpm as default
 
 
 def tick_to_breathing_rate(tick):

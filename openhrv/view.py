@@ -30,6 +30,8 @@ from openhrv.config import (
     IBI_BUFFER_SIZE,
     MAX_BREATHING_RATE,
     MIN_BREATHING_RATE,
+    INITIAL_BREATHING_RATE,
+    DEFAULT_BPM,
 )
 from openhrv import resources  # noqa
 
@@ -104,7 +106,7 @@ class PacerWidget(QChartView):
 class XYSeriesWidget(QChartView):
     def __init__(self, x_values=None, y_values=None, line_color=BLUE, autoscale=False):
         super().__init__()
-
+        log.debug("instantiating an XYSeriesWidget")
         self.plot = QChart()
         self.plot.legend().setVisible(False)
         self.plot.setBackgroundRoundness(2)
@@ -112,13 +114,16 @@ class XYSeriesWidget(QChartView):
         self.plot.setMargins(QMargins(0, 0, 0, 0))
         self.plot.setPlotAreaBackgroundVisible(True)
 
+        log.debug("making a spline series")
         self.time_series = QSplineSeries()
         self.plot.addSeries(self.time_series)
         pen = self.time_series.pen()
         pen.setWidth(4)
         pen.setColor(line_color)
         self.time_series.setPen(pen)
+
         if x_values is not None and y_values is not None:
+            log.debug("calling _instantiate")
             self._instantiate_series(x_values, y_values)
 
         self.x_axis = QValueAxis()
@@ -134,19 +139,42 @@ class XYSeriesWidget(QChartView):
         self.setChart(self.plot)
 
     def autoscale(self):
-        y = [pt.y() for pt in self.time_series.points()]
-        ymax = max(y)
-        ymin = min(y)
-        ymax = 0.05 * (ymax - ymin) + ymax
-        self.y_axis.setRange(-0.1 * (ymax - ymin) + ymin, 0.1 * (ymax - ymin) + ymax)
+        try:
+            y = [pt.y() for pt in self.time_series.points()]
+            ymax = max(y)
+            ymin = min(y)
+            ymax = 0.05 * (ymax - ymin) + ymax
+            self.y_axis.setRange(
+                -0.1 * (ymax - ymin) + ymin, 0.1 * (ymax - ymin) + ymax
+            )
+        except Exception as e:
+            log.debug(f"Autoscale failed with {e}")
 
     def _instantiate_series(self, x_values, y_values):
+        log.debug("instantiating a series")
         for x, y in zip(x_values, y_values):
             self.time_series.append(x, y)
 
     def update_series(self, x_values, y_values):
         for i, (x, y) in enumerate(zip(x_values, y_values)):
             self.time_series.replace(i, x, y)
+        if self.autoscale:
+            self.autoscale()
+
+
+class BPMWidget(XYSeriesWidget):
+    def __init__(self, *args, **kwargs):
+        log.debug("instantiating an BPMWidget")
+        super().__init__(*args, **kwargs)
+
+    def _instantiate_series(self, x_values, y_values):
+        log.debug("instantiating a bpm series")
+        for x, y in zip(x_values, y_values):
+            self.time_series.append(x, 60000 / y)  # convert ibi in ms to bpm
+
+    def update_series(self, x_values, y_values):
+        for i, (x, y) in enumerate(zip(x_values, y_values)):
+            self.time_series.replace(i, x, 60000 / y)  # convert ibi in ms to bpm
         if self.autoscale:
             self.autoscale()
 
@@ -162,12 +190,13 @@ class ViewSignals(QObject):
 class View(QMainWindow):
     def __init__(self, model):
         super().__init__()
-
+        self._show_bpm = DEFAULT_BPM
         self.setWindowTitle("OpenHRV")
         self.setWindowIcon(QIcon(":/logo.png"))
 
         self.model = model
         self.model.ibis_buffer_update.connect(self.plot_ibis)
+        self.model.ibis_buffer_update.connect(self.plot_bpm)
         self.model.mean_hrv_update.connect(self.plot_hrv)
         self.model.addresses_update.connect(self.list_addresses)
         self.model.pacer_rate_update.connect(self.update_pacer_label)
@@ -211,6 +240,18 @@ class View(QMainWindow):
         self.ibis_widget.x_axis.setTickInterval(10.0)
         self.ibis_widget.y_axis.setTitleText("Inter-Beat-Interval (msec)")
         self.ibis_widget.y_axis.setRange(300, 1500)
+        self.ibis_widget.setVisible(not self._show_bpm)
+
+        self.bpm_widget = BPMWidget(
+            self.model.ibis_seconds, self.model.ibis_buffer, autoscale=True
+        )
+        self.bpm_widget.x_axis.setTitleText("Seconds")
+        self.bpm_widget.x_axis.setRange(-IBI_BUFFER_SIZE, 0.0)
+        self.bpm_widget.x_axis.setTickCount(7)
+        self.bpm_widget.x_axis.setTickInterval(10.0)
+        self.bpm_widget.y_axis.setTitleText("Heart Rate (bpm)")
+        self.bpm_widget.y_axis.setRange(40, 80)
+        self.bpm_widget.setVisible(self._show_bpm)
 
         self.hrv_widget = XYSeriesWidget(
             self.model.mean_hrv_seconds, self.model.mean_hrv_buffer, WHITE
@@ -239,16 +280,15 @@ class View(QMainWindow):
             breathing_rate_to_tick(MAX_BREATHING_RATE),
         )
         self.pacer_rate.valueChanged.connect(self.model.update_breathing_rate)
-        self.pacer_rate.setValue(breathing_rate_to_tick(MAX_BREATHING_RATE))
+        self.pacer_rate.setValue(breathing_rate_to_tick(INITIAL_BREATHING_RATE))
 
         self.pacer_toggle = QCheckBox("Show pacer", self)
         self.pacer_toggle.setChecked(True)
         self.pacer_toggle.stateChanged.connect(self.toggle_pacer)
 
         self.bpm_toggle = QCheckBox("Use heart rate (bpm)", self)
-        self.bpm_toggle.setChecked(True)
-        # self.bpm_toggle_label = QLabel("Show heart rate in bpm")
-        #        self.bpm_toggle.stateChanged.connect(self.change_hr_plot)
+        self.bpm_toggle.setChecked(self._show_bpm)
+        self.bpm_toggle.stateChanged.connect(self.toggle_bpm)
 
         self.hrv_target_label = QLabel(f"Target: {self.model.hrv_target}")
 
@@ -293,6 +333,7 @@ class View(QMainWindow):
 
         self.hlayout0 = QHBoxLayout()
         self.hlayout0.addWidget(self.ibis_widget)
+        self.hlayout0.addWidget(self.bpm_widget)
         self.hlayout0.addWidget(self.pacer_widget)
         self.vlayout0.addLayout(self.hlayout0, stretch=50)
 
@@ -387,6 +428,10 @@ class View(QMainWindow):
     def plot_ibis(self, ibis):
         self.ibis_widget.update_series(*ibis[1])
 
+    def plot_bpm(self, ibis):
+        log.debug("calling plot_bpm")
+        self.bpm_widget.update_series(*ibis[1])
+
     def plot_hrv(self, hrv):
         self.hrv_widget.update_series(*hrv[1])
 
@@ -404,6 +449,11 @@ class View(QMainWindow):
     def update_hrv_target(self, target):
         self.hrv_widget.y_axis.setRange(0, target[1])
         self.hrv_target_label.setText(f"Target: {target[1]}")
+
+    def toggle_bpm(self):
+        self._show_bpm = not self._show_bpm
+        self.ibis_widget.setVisible(not self._show_bpm)
+        self.bpm_widget.setVisible(self._show_bpm)
 
     def toggle_pacer(self):
         visible = self.pacer_widget.isVisible()
