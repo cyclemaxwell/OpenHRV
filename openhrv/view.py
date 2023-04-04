@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 from PySide6.QtWidgets import (
     QMainWindow,
@@ -32,10 +33,12 @@ from openhrv.config import (
 )
 from openhrv import resources  # noqa
 
+log = logging.getLogger(
+    "__main__." + __name__
+)  # https://stackoverflow.com/questions/50714316/how-to-use-logging-getlogger-name-in-multiple-modules
+
 OCTOBER_SILENCE_BLUE = QColor.fromString("#b721ff")
 OCTOBER_SILENCE_PURPLE = QColor.fromString("#21d4fd")
-
-
 BLUE = QColor(135, 206, 250)
 WHITE = QColor(255, 255, 255)
 GREEN = QColor(0, 255, 0)
@@ -99,13 +102,15 @@ class PacerWidget(QChartView):
 
 
 class XYSeriesWidget(QChartView):
-    def __init__(self, x_values=None, y_values=None, line_color=BLUE):
+    def __init__(self, x_values=None, y_values=None, line_color=BLUE, autoscale=False):
         super().__init__()
 
         self.plot = QChart()
         self.plot.legend().setVisible(False)
-        self.plot.setBackgroundRoundness(0)
+        self.plot.setBackgroundRoundness(2)
+        self.plot.setBackgroundVisible(False)
         self.plot.setMargins(QMargins(0, 0, 0, 0))
+        self.plot.setPlotAreaBackgroundVisible(True)
 
         self.time_series = QSplineSeries()
         self.plot.addSeries(self.time_series)
@@ -128,6 +133,13 @@ class XYSeriesWidget(QChartView):
 
         self.setChart(self.plot)
 
+    def autoscale(self):
+        y = [pt.y() for pt in self.time_series.points()]
+        ymax = max(y)
+        ymin = min(y)
+        ymax = 0.05 * (ymax - ymin) + ymax
+        self.y_axis.setRange(-0.1 * (ymax - ymin) + ymin, 0.1 * (ymax - ymin) + ymax)
+
     def _instantiate_series(self, x_values, y_values):
         for x, y in zip(x_values, y_values):
             self.time_series.append(x, y)
@@ -135,6 +147,8 @@ class XYSeriesWidget(QChartView):
     def update_series(self, x_values, y_values):
         for i, (x, y) in enumerate(zip(x_values, y_values)):
             self.time_series.replace(i, x, y)
+        if self.autoscale:
+            self.autoscale()
 
 
 class ViewSignals(QObject):
@@ -189,7 +203,7 @@ class View(QMainWindow):
         self.signals.annotation.connect(self.logger.write_to_file)
 
         self.ibis_widget = XYSeriesWidget(
-            self.model.ibis_seconds, self.model.ibis_buffer
+            self.model.ibis_seconds, self.model.ibis_buffer, autoscale=True
         )
         self.ibis_widget.x_axis.setTitleText("Seconds")
         self.ibis_widget.x_axis.setRange(-IBI_BUFFER_SIZE, 0.0)
@@ -230,6 +244,11 @@ class View(QMainWindow):
         self.pacer_toggle = QCheckBox("Show pacer", self)
         self.pacer_toggle.setChecked(True)
         self.pacer_toggle.stateChanged.connect(self.toggle_pacer)
+
+        self.bpm_toggle = QCheckBox("Use heart rate (bpm)", self)
+        self.bpm_toggle.setChecked(True)
+        # self.bpm_toggle_label = QLabel("Show heart rate in bpm")
+        #        self.bpm_toggle.stateChanged.connect(self.change_hr_plot)
 
         self.hrv_target_label = QLabel(f"Target: {self.model.hrv_target}")
 
@@ -289,6 +308,12 @@ class View(QMainWindow):
         self.device_panel = QGroupBox("ECG Devices")
         self.device_panel.setLayout(self.device_config)
         self.hlayout1.addWidget(self.device_panel, stretch=25)
+
+        self.ibis_config = QFormLayout()
+        self.ibis_config.addRow(self.bpm_toggle)
+        self.ibis_config_panel = QGroupBox()
+        self.ibis_config_panel.setLayout(self.ibis_config)
+        self.hlayout1.addWidget(self.ibis_config_panel, stretch=25)
 
         self.hrv_config = QFormLayout()
         self.hrv_config.addRow(self.hrv_target_label, self.hrv_target)

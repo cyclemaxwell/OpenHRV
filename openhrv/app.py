@@ -1,7 +1,11 @@
 import sys
+import logging
 from PySide6.QtWidgets import QApplication
 from openhrv.view import View
 from openhrv.model import Model
+
+logging.basicConfig(level=logging.DEBUG, handlers=[logging.StreamHandler()])
+log = logging.getLogger()
 
 
 class Application(QApplication):

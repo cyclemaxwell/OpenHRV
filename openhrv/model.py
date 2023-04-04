@@ -41,6 +41,7 @@ class Model(QObject):
         self.update_ibis_seconds(value)
         self.ibis_buffer = np.roll(self.ibis_buffer, -1)
         self.ibis_buffer[-1] = self.validate_ibi(value)
+        print(f"last reading: {1000 * 60 / (value)} bpm")
         self.ibis_buffer_update.emit(
             ("InterBeatInterval", (self.ibis_seconds, self.ibis_buffer))
         )
@@ -112,6 +113,7 @@ class Model(QObject):
         )
 
     def update_ibis_seconds(self, value):
+        """Use the ibis data to create time stamps"""
         self.ibis_seconds = self.ibis_seconds - value / 1000
         self.ibis_seconds = np.roll(self.ibis_seconds, -1)
         self.ibis_seconds[-1] = 0

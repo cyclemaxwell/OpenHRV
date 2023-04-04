@@ -1,10 +1,16 @@
 from PySide6.QtCore import QObject, Signal, QTimer
 from random import randrange
+from utils import get_address_or_uuid
 
 
 class MockBluetoothAddress:
     def toString(self):
         return "31:41:59:26:53:58"
+
+
+class MockBluetoothUUID:
+    def toString(self):
+        return "{0229c9aa-7f96-421c-8862-d6c0d9f82121}"  # random from uuid.uuid4()
 
 
 class MockSensor:
@@ -13,6 +19,9 @@ class MockSensor:
 
     def address(self):
         return MockBluetoothAddress()
+
+    def deviceUuid(self):
+        return MockBluetoothUUID()
 
 
 class MockSensorScanner(QObject):
@@ -38,12 +47,12 @@ class MockSensorClient(QObject):
 
     def connect_client(self, sensor):
         self.status_update.emit(
-            f"Connecting to sensor at {sensor.address().toString()}."
+            f"Connecting to mock sensor at {get_address_or_uuid(sensor)}."
         )
         self.timer.start()
 
     def disconnect_client(self):
-        self.status_update.emit("Disconnecting from sensor.")
+        self.status_update.emit("Disconnecting from mock sensor.")
         self.timer.stop()
 
     def simulate_ibi(self):
